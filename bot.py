@@ -4,6 +4,7 @@ import datetime
 import random
 import numpy as np
 import csv
+import pytz
 
 import matplotlib.pyplot as plt
 from matplotlib import style
@@ -23,6 +24,22 @@ roll_bot = "RPBot#4161"
 async def on_ready():
     print(f'{client.user} has connected to Discord!')
 
+def utc_to_local(utc_dt, local_tz):
+    """Accepts a datetime object in UTC time, and returns the same time, in the timezone that was also passed"""
+    local_dt = utc_dt.replace(tzinfo=pytz.utc).astimezone(local_tz)
+    return local_tz.normalize(local_dt)
+
+def get_channel_members_names(channel):
+    """Returns a list of all members of a channel. If the member has a nickname, the nickname is used instead of their name, otherwise their name is used"""
+
+    names = []
+    for member in channel.members:
+        if member.nick is None:
+            names.append(member.name)
+        else:
+            names.append(member.nick)
+
+    return names
 
 async def get_roll_history(channel, user=None, afterDate=None):
     print("Getting roll history for", user)
@@ -44,14 +61,14 @@ async def get_roll_history(channel, user=None, afterDate=None):
 
             # roll message
             if roll_message:
-                #print("Roll message")
                 roller = roll_message.group(1)
-                if roller == user or user == None:
+
+                if roller == user or user is None:
                     roll = int(roll_message.group(2))
-                    if roll > 100 or roll < 1:
-                        continue
+                    if not(roll > 100 or roll < 1):
+                            user_rolls.append(roll)
                     
-                    user_rolls.append(roll)
+                    
     return user_rolls
 
 
@@ -68,23 +85,37 @@ async def parse_hist_command(command, message):
 
     date = None
     user = None
-    # if first arg is not one of these, its a user
-    # ex. *hist andtrue today
-    if not(args[0] == "today" or args[0] == "month" or args[0] == "year"):
-        user = args[0]
-        users = (u.name for u in message.channel.members)
 
-        if user not in users:
-            await message.channel.send("That user is not in this channel, my guy")
-            return
-
-        # date is the arg after user
-        if len(args) > 1:
-            date = args[1]
+    i = 0
+    not_date =  True
+    while not_date and i < len(args):
+        # if first arg is not one of these, its a user
+        # ex. *hist andtrue today
+        if not(args[i] == "hour" or args[i] == "week" or args[i] == "today" or args[i] == "month" or args[i] == "year"):
+            if i == 0:
+                user = args[i]
+            else:
+                user = user + str(' ') + str(args[i])
+                not_date = False
         else:
-            date = "today" # today by default
-    else: # *hist month
-        date = args[0]
+            break
+
+        i = i + 1
+
+    print(user)
+    users = get_channel_members_names(message.channel)
+
+    print(users)
+
+    if user not in users and user is not None:
+        await message.channel.send("That user is not in this channel, my guy")
+        return
+
+    # set date
+    if len(args) >= i+1:
+        date = args[i]
+    else: 
+        date = "today"
 
 
     title = None
@@ -99,12 +130,14 @@ async def parse_hist_command(command, message):
         afterDate = today - datetime.timedelta(hours = 1)
     elif date == "today":
         afterDate = today - datetime.timedelta(days = 1)
+    elif date == "week":
+        afterDate = today - datetime.timedelta(weeks = 1)
     elif date == "month":
         afterDate = today - datetime.timedelta(days = today.day)
     elif date == "year":
         afterDate = today - datetime.timedelta(days = int(today.strftime("%j")))
         
-    upload_message = "Rolls since " + afterDate.strftime("%b %d %Y %H:%M:%S")
+    upload_message = "Rolls since " + utc_to_local(afterDate, pytz.timezone('US/Eastern')).strftime("%b %d %Y %H:%M:%S")
 
     await create_histogram(message, title, await get_roll_history(message.channel, user, afterDate=afterDate), upload_message, create_csv="file" in args)
 
