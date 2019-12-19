@@ -66,8 +66,21 @@ async def get_roll_history(channel, user=None, afterDate=None):
                 if roller == user or user is None:
                     roll = int(roll_message.group(2))
                     if not(roll > 100 or roll < 1):
-                            user_rolls.append(roll)
-                    
+                        #look back to see what the user rolled
+                        async for prev_message in channel.history(limit=5, before=message.created_at):
+
+                            prev_message_author = None
+                            if prev_message.author.nick is None:
+                                prev_message_author = prev_message.author.name
+                            else:
+                                prev_message_author = prev_message.author.nick
+
+                            if user == prev_message_author and prev_message.content == "!roll 1d100":
+                                #print("Found a message:", prev_message.content)
+                                #print("With author:", prev_message_author)
+                                
+                                user_rolls.append(roll)
+                                break
                     
     return user_rolls
 
@@ -88,7 +101,7 @@ async def parse_hist_command(command, message):
 
     i = 0
     not_date =  True
-    while not_date and i < len(args):
+    while i < len(args):
         # if first arg is not one of these, its a user
         # ex. *hist andtrue today
         if not(args[i] == "hour" or args[i] == "week" or args[i] == "today" or args[i] == "month" or args[i] == "year"):
@@ -96,16 +109,12 @@ async def parse_hist_command(command, message):
                 user = args[i]
             else:
                 user = user + str(' ') + str(args[i])
-                not_date = False
         else:
             break
 
         i = i + 1
 
-    print(user)
     users = get_channel_members_names(message.channel)
-
-    print(users)
 
     if user not in users and user is not None:
         await message.channel.send("That user is not in this channel, my guy")
